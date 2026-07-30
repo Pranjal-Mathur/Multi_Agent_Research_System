@@ -1,8 +1,7 @@
 import time
 import re
-import streamlit as st
-from groq import BadRequestError
 import traceback
+import streamlit as st
 
 from agents import (
     build_search_agent,
@@ -11,180 +10,357 @@ from agents import (
     critic_chain,
 )
 
-st.set_page_config(page_title="Multi-Agent Research System", page_icon="🔎", layout="wide")
+st.set_page_config(
+    page_title="Multi-Agent Research System",
+    page_icon="🔎",
+    layout="wide"
+)
 
 st.title("🔎 Multi-Agent Research System")
-st.caption("Search Agent → Reader Agent → Writer → Critic ")
+st.caption("Search Agent → Reader Agent → Writer → Critic")
 
 
-
-
-
-def invoke_with_retry(agent, payload, retries=3, delay=2):
-    """Retry agent.invoke on Groq tool_use_failed / malformed tool-call errors."""
-    last_err = None
-    for attempt in range(retries):
-        try:
-            return agent.invoke(payload)
-        except BadRequestError as e:
-            last_err = e
-            st.warning(f"Tool call failed (attempt {attempt + 1}/{retries}), retrying...")
-            time.sleep(delay)
-    raise RuntimeError(f"Agent failed after {retries} attempts: {last_err}")
-
-
+# Extract only LangChain message content
 def extract_text(message):
+
     content = message.content
 
     if isinstance(content, str):
         return content
 
     if isinstance(content, list):
-        return "\n".join(
-            item["text"]
-            for item in content
-            if isinstance(item, dict) and "text" in item
-        )
+        parts = []
+
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+
+            elif isinstance(block, dict) and "text" in block:
+                parts.append(block["text"])
+
+        return "\n".join(parts)
 
     return str(content)
 
 
-# ---------------- Sidebar ----------------
-with st.sidebar:
-    st.header("About")
-    st.write(
-        "This app runs a 4-stage pipeline:\n\n"
-        "1. **Search Agent** — searches the web \n"
-        "2. **Reader Agent** — scrapes the  URL\n"
-        "3. **Writer** — drafts a structured report\n"
-        "4. **Critic** — scores and reviews the report"
+
+def invoke_with_retry(agent, payload, retries=3, delay=3):
+
+    last_error = None
+
+    for attempt in range(retries):
+
+        try:
+            return agent.invoke(payload)
+
+        except Exception as e:
+
+            last_error = e
+
+            st.warning(
+                f"Attempt {attempt+1}/{retries} failed. Retrying..."
+            )
+
+            time.sleep(delay)
+
+    raise RuntimeError(
+        f"Agent failed after {retries} retries: {last_error}"
     )
+
+
+# ---------------- Sidebar ----------------
+
+with st.sidebar:
+
+    st.header("About")
+
+    st.write(
+        """
+This app runs a 4-stage pipeline:
+
+1. **Search Agent**
+   - Uses Tavily search
+
+2. **Reader Agent**
+   - Selects best URL
+   - Scrapes article
+
+3. **Writer**
+   - Creates research report
+
+4. **Critic**
+   - Reviews report
+"""
+    )
+
     st.divider()
-    show_intermediate = st.checkbox("Show intermediate steps", value=True)
+
+    show_intermediate = st.checkbox(
+        "Show intermediate steps",
+        value=True
+    )
 
 
-# ---------------- Main input ----------------
-topic = st.text_input("Enter a research topic", placeholder="e.g. CJP Protest")
-run_button = st.button("Run Research Pipeline", type="primary")
+# ---------------- Input ----------------
+
+topic = st.text_input(
+    "Enter a research topic",
+    placeholder="e.g. System Design for freshers"
+)
+
+
+run_button = st.button(
+    "Run Research Pipeline",
+    type="primary"
+)
+
+
 
 if run_button:
+
     if not topic.strip():
+
         st.error("Please enter a topic first.")
         st.stop()
 
+
     state = {}
 
+
     try:
-        # ---------------- Step 1: Search Agent ----------------
-        with st.status("Step 1 — Searching the web...", expanded=show_intermediate) as status:
+
+
+        # ---------------- Search Agent ----------------
+
+        with st.status(
+            "Step 1 — Searching web...",
+            expanded=show_intermediate
+        ) as status:
+
+
             search_agent = build_search_agent()
+
 
             search_result = invoke_with_retry(
                 search_agent,
                 {
-                    "messages": [
+                    "messages":[
                         (
                             "user",
-                            f"Search the web for detailed information about '{topic}'. "
-                            "Return the raw search results with Title, URL and Snippet."
+                            f"""
+Search the web for detailed information about '{topic}'.
+
+Return raw search results with:
+
+Title:
+URL:
+Snippet:
+"""
                         )
                     ]
-                },
+                }
             )
 
+
             state["search_results"] = extract_text(
-    search_result["messages"][-1]
-)
-            urls = re.findall(r"https?://[^\s]+", state["search_results"])
+                search_result["messages"][-1]
+            )
+
+
+            urls = re.findall(
+                r"https?://[^\s]+",
+                state["search_results"]
+            )
+
 
             if show_intermediate:
-                st.text_area("Raw search results", state["search_results"], height=200)
-                st.write("**URLs found:**", urls if urls else "None")
 
-            status.update(label="Step 1 — Search complete ✅", state="complete")
+                st.text_area(
+                    "Raw Search Results",
+                    state["search_results"],
+                    height=250
+                )
 
-        # ---------------- Step 2: Reader Agent ----------------
-        with st.status("Step 2 — Reading best source...", expanded=show_intermediate) as status:
+                st.write(
+                    "URLs:",
+                    urls
+                )
+
+
+            status.update(
+                label="Step 1 completed ✅",
+                state="complete"
+            )
+
+
+
+        # ---------------- Reader Agent ----------------
+
+
+        with st.status(
+            "Step 2 — Reading source...",
+            expanded=show_intermediate
+        ) as status:
+
+
             reader_agent = build_reader_agent()
+
 
             reader_result = invoke_with_retry(
                 reader_agent,
                 {
-                    "messages": [
+                    "messages":[
                         (
                             "user",
                             f"""
-Below are search results.
+Below are search results:
 
 {state['search_results']}
 
 Extract the best URL.
 
-Use the scrape_url tool.
+Use scrape_url tool.
 
-Return ONLY the scraped article.
+Return ONLY scraped article text.
 """
                         )
                     ]
-                },
+                }
             )
 
+
             state["scraped_content"] = extract_text(
-    reader_result["messages"][-1]
-)
-            
+                reader_result["messages"][-1]
+            )
+
 
             if show_intermediate:
-                st.text_area("Scraped content", state["scraped_content"], height=200)
 
-            status.update(label="Step 2 — Reading complete ✅", state="complete")
+                st.text_area(
+                    "Scraped Content",
+                    state["scraped_content"],
+                    height=250
+                )
 
-        # ---------------- Step 3: Writer ----------------
-        with st.status("Step 3 — Writing report...", expanded=False) as status:
+
+            status.update(
+                label="Step 2 completed ✅",
+                state="complete"
+            )
+
+
+
+        # ---------------- Writer ----------------
+
+
+        with st.status(
+            "Step 3 — Writing report..."
+        ) as status:
+
+
             research = f"""
-SEARCH RESULTS
+
+SEARCH RESULTS:
 
 {state['search_results']}
 
 
-SCRAPED CONTENT
+SCRAPED CONTENT:
 
 {state['scraped_content']}
+
 """
-            state["report"] = extract_text(
-                writer_chain.invoke(
-                    {
-                        "topic": topic,
-                        "research": research,
-                    }
-                )
+
+
+            # IMPORTANT:
+            # writer_chain already returns string
+
+            state["report"] = writer_chain.invoke(
+                {
+                    "topic": topic,
+                    "research": research
+                }
             )
-            status.update(label="Step 3 — Report drafted ✅", state="complete")
 
-        # ---------------- Step 4: Critic ----------------
-        with st.status("Step 4 — Reviewing report...", expanded=False) as status:
-            state["feedback"] = extract_text(
-                critic_chain.invoke({"report": state["report"]})
+
+            status.update(
+                label="Step 3 completed ✅",
+                state="complete"
             )
-            status.update(label="Step 4 — Review complete ✅", state="complete")
 
-        # ---------------- Final output ----------------
-        st.success("Pipeline finished!")
 
-        tab1, tab2 = st.tabs(["📄 Report", "🧪 Critic Feedback"])
+
+        # ---------------- Critic ----------------
+
+
+        with st.status(
+            "Step 4 — Reviewing report..."
+        ) as status:
+
+
+            # IMPORTANT:
+            # critic_chain already returns string
+
+            state["feedback"] = critic_chain.invoke(
+                {
+                    "report": state["report"]
+                }
+            )
+
+
+            status.update(
+                label="Step 4 completed ✅",
+                state="complete"
+            )
+
+
+
+        # ---------------- Output ----------------
+
+
+        st.success(
+            "Pipeline finished successfully 🚀"
+        )
+
+
+        tab1, tab2 = st.tabs(
+            [
+                "📄 Report",
+                "🧪 Critic Feedback"
+            ]
+        )
+
 
         with tab1:
-            st.markdown(state["report"])
-            st.download_button(
-                "Download report as .md",
-                data=state["report"],
-                file_name=f"{topic.replace(' ', '_')}_report.md",
-                mime="text/markdown",
+
+            st.markdown(
+                state["report"]
             )
 
+
+            st.download_button(
+                "Download Report",
+                data=state["report"],
+                file_name=f"{topic.replace(' ','_')}_report.md",
+                mime="text/markdown"
+            )
+
+
         with tab2:
-            st.markdown(state["feedback"])
+
+            st.markdown(
+                state["feedback"]
+            )
+
 
     except Exception:
-        st.error("Pipeline failed!")
-        st.exception(traceback.format_exc())
+
+        st.error(
+            "Pipeline failed!"
+        )
+
+        st.code(
+            traceback.format_exc()
+        )
+
+        

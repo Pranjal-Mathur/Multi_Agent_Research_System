@@ -7,6 +7,7 @@ from agents import (
     critic_chain,
 )
 
+
 def extract_text(message):
     content = message.content
 
@@ -21,8 +22,6 @@ def extract_text(message):
         )
 
     return str(content)
-
-
 
 
 def run_research_pipeline(topic: str):
@@ -42,23 +41,18 @@ def run_research_pipeline(topic: str):
                 (
                     "user",
                     f"Search the web for detailed information about '{topic}'. "
-                    "Return the raw search results with Title, URL and Snippet."
+                    "Return the raw search results with Title, URL and Snippet.",
                 )
             ]
         }
     )
-    print(type(search_result["messages"][-1]))
-    print(search_result["messages"][-1])
-    print(type(search_result["messages"][-1].content))
-    print(search_result["messages"][-1].content)
 
     state["search_results"] = extract_text(
-    search_result["messages"][-1]
-)
+        search_result["messages"][-1]
+    )
 
     print(state["search_results"])
 
-    # verify URLs exist
     urls = re.findall(r"https?://[^\s]+", state["search_results"])
 
     print("\nURLs found:")
@@ -86,19 +80,18 @@ Extract the best URL.
 Use the scrape_url tool.
 
 Return ONLY the scraped article.
-"""
+""",
                 )
             ]
         }
     )
 
     state["scraped_content"] = extract_text(
-    reader_result["messages"][-1]
-)
+        reader_result["messages"][-1]
+    )
 
     print(state["scraped_content"])
-
-    # ---------------- Writer ----------------
+        # ---------------- Writer ----------------
     print("\n" + " =" * 50)
     print("Step 3 - Writer")
     print("=" * 50)
@@ -142,3 +135,4 @@ SCRAPED CONTENT
 if __name__ == "__main__":
     topic = input("Enter research topic: ")
     run_research_pipeline(topic)
+
