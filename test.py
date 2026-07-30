@@ -1,11 +1,23 @@
+# from dotenv import load_dotenv
+# from langchain_mistralai import ChatMistralAI
+
+# load_dotenv()
+
+# llm = ChatMistralAI(
+#     model="mistral-large-latest",
+#     temperature=0
+# )
+
+# print(llm.invoke("Hello"))
+
+import os
 from dotenv import load_dotenv
-from langchain_mistralai import ChatMistralAI
+from pathlib import Path
 
-load_dotenv()
+env_path = Path(".env")
 
-llm = ChatMistralAI(
-    model="mistral-large-latest",
-    temperature=0
-)
+print("ENV exists:", env_path.exists())
 
-print(llm.invoke("Hello"))
+load_dotenv(dotenv_path=env_path)
+
+print("GOOGLE:", os.getenv("GOOGLE_API_KEY"))
