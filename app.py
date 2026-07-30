@@ -2,6 +2,7 @@ import time
 import re
 import streamlit as st
 from groq import BadRequestError
+import traceback
 
 from agents import (
     build_search_agent,
@@ -156,6 +157,7 @@ SCRAPED CONTENT
         with tab2:
             st.markdown(state["feedback"])
 
-    except Exception as e:
-        st.error(f"Pipeline failed: {e}")
+    except Exception:
+        st.error("Pipeline failed!")
+        st.exception(traceback.format_exc())
 
