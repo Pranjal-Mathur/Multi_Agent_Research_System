@@ -7,6 +7,23 @@ from agents import (
     critic_chain,
 )
 
+def extract_text(message):
+    content = message.content
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        return "\n".join(
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and "text" in item
+        )
+
+    return str(content)
+
+
+
 
 def run_research_pipeline(topic: str):
 
@@ -30,8 +47,14 @@ def run_research_pipeline(topic: str):
             ]
         }
     )
+    print(type(search_result["messages"][-1]))
+    print(search_result["messages"][-1])
+    print(type(search_result["messages"][-1].content))
+    print(search_result["messages"][-1].content)
 
-    state["search_results"] = search_result["messages"][-1].content
+    state["search_results"] = extract_text(
+    search_result["messages"][-1]
+)
 
     print(state["search_results"])
 
@@ -69,7 +92,9 @@ Return ONLY the scraped article.
         }
     )
 
-    state["scraped_content"] = reader_result["messages"][-1].content
+    state["scraped_content"] = extract_text(
+    reader_result["messages"][-1]
+)
 
     print(state["scraped_content"])
 

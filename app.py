@@ -17,6 +17,9 @@ st.title("🔎 Multi-Agent Research System")
 st.caption("Search Agent → Reader Agent → Writer → Critic ")
 
 
+
+
+
 def invoke_with_retry(agent, payload, retries=3, delay=2):
     """Retry agent.invoke on Groq tool_use_failed / malformed tool-call errors."""
     last_err = None
@@ -28,6 +31,22 @@ def invoke_with_retry(agent, payload, retries=3, delay=2):
             st.warning(f"Tool call failed (attempt {attempt + 1}/{retries}), retrying...")
             time.sleep(delay)
     raise RuntimeError(f"Agent failed after {retries} attempts: {last_err}")
+
+
+def extract_text(message):
+    content = message.content
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        return "\n".join(
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and "text" in item
+        )
+
+    return str(content)
 
 
 # ---------------- Sidebar ----------------
@@ -73,7 +92,9 @@ if run_button:
                 },
             )
 
-            state["search_results"] = search_result["messages"][-1].content
+            state["search_results"] = extract_text(
+    search_result["messages"][-1]
+)
             urls = re.findall(r"https?://[^\s]+", state["search_results"])
 
             if show_intermediate:
@@ -108,7 +129,10 @@ Return ONLY the scraped article.
                 },
             )
 
-            state["scraped_content"] = reader_result["messages"][-1].content
+            state["scraped_content"] = extract_text(
+    reader_result["messages"][-1]
+)
+            
 
             if show_intermediate:
                 st.text_area("Scraped content", state["scraped_content"], height=200)
@@ -127,17 +151,21 @@ SCRAPED CONTENT
 
 {state['scraped_content']}
 """
-            state["report"] = writer_chain.invoke(
-                {
-                    "topic": topic,
-                    "research": research,
-                }
+            state["report"] = extract_text(
+                writer_chain.invoke(
+                    {
+                        "topic": topic,
+                        "research": research,
+                    }
+                )
             )
             status.update(label="Step 3 — Report drafted ✅", state="complete")
 
         # ---------------- Step 4: Critic ----------------
         with st.status("Step 4 — Reviewing report...", expanded=False) as status:
-            state["feedback"] = critic_chain.invoke({"report": state["report"]})
+            state["feedback"] = extract_text(
+                critic_chain.invoke({"report": state["report"]})
+            )
             status.update(label="Step 4 — Review complete ✅", state="complete")
 
         # ---------------- Final output ----------------
@@ -160,4 +188,3 @@ SCRAPED CONTENT
     except Exception:
         st.error("Pipeline failed!")
         st.exception(traceback.format_exc())
-
