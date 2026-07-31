@@ -16,7 +16,13 @@ def web_search(query: str) -> str:
     Search the web for recent and reliable information on a topic.
     Returns Titles, URLs and snippets.
     """
-    results = tavily.search(query=query, max_results=5)
+    results = tavily.search(
+    query=query,
+    max_results=5,
+    search_depth="advanced",
+    include_answer=False,
+    include_raw_content=False,
+)
 
     out = []
 
@@ -62,3 +68,5 @@ def scrape_url(url: str) -> str:
 
     except Exception as e:
         return f"Could not scrape URL: {str(e)}"
+
+  

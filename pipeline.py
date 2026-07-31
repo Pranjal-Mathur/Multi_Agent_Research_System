@@ -1,34 +1,36 @@
 import re
+import time
+
+from langchain_core.messages import ToolMessage
 
 from agents import (
-    build_reader_agent,
     build_search_agent,
+    build_reader_agent,
     writer_chain,
-    critic_chain,
 )
 
-
-def extract_text(message):
-    content = message.content
-
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        return "\n".join(
-            item["text"]
-            for item in content
-            if isinstance(item, dict) and "text" in item
-        )
-
-    return str(content)
+SLEEP_BETWEEN_CALLS = 60
 
 
-def run_research_pipeline(topic: str):
+def wait():
+    print(f"\nWaiting {SLEEP_BETWEEN_CALLS} seconds...")
+    time.sleep(SLEEP_BETWEEN_CALLS)
+
+
+def get_tool_output(messages, tool_name):
+    """
+    Extract the output of a specific tool from the agent messages.
+    """
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and msg.name == tool_name:
+            return msg.content
+    return ""
+
+
+def run_research_pipeline(topic):
 
     state = {}
 
-    # ---------------- Search Agent ----------------
     print("\n" + " =" * 50)
     print("Step 1 - Search Agent")
     print("=" * 50)
@@ -40,25 +42,32 @@ def run_research_pipeline(topic: str):
             "messages": [
                 (
                     "user",
-                    f"Search the web for detailed information about '{topic}'. "
-                    "Return the raw search results with Title, URL and Snippet.",
+                    f"Search for {topic}"
                 )
             ]
-        }
+        },
+        config={"recursion_limit": 10},
     )
 
-    state["search_results"] = extract_text(
-        search_result["messages"][-1]
+    state["search_results"] = get_tool_output(
+        search_result["messages"],
+        "web_search",
     )
 
     print(state["search_results"])
 
-    urls = re.findall(r"https?://[^\s]+", state["search_results"])
+    urls = re.findall(r"https?://\S+", state["search_results"])
 
-    print("\nURLs found:")
-    print(urls)
+    print("\nURLs Found:")
+    for url in urls:
+        print(url)
 
-    # ---------------- Reader Agent ----------------
+    if not urls:
+        print("\nWARNING: No URLs returned by Search Agent.")
+        return
+
+    wait()
+
     print("\n" + " =" * 50)
     print("Step 2 - Reader Agent")
     print("=" * 50)
@@ -71,27 +80,31 @@ def run_research_pipeline(topic: str):
                 (
                     "user",
                     f"""
-Below are search results.
+Search Results:
 
 {state['search_results']}
 
-Extract the best URL.
+Choose the single best URL.
 
-Use the scrape_url tool.
+Call scrape_url.
 
-Return ONLY the scraped article.
-""",
+Return ONLY the scraped content.
+"""
                 )
             ]
-        }
+        },
+        config={"recursion_limit": 10},
     )
 
-    state["scraped_content"] = extract_text(
-        reader_result["messages"][-1]
+    state["scraped_content"] = get_tool_output(
+        reader_result["messages"],
+        "scrape_url",
     )
 
     print(state["scraped_content"])
-        # ---------------- Writer ----------------
+
+    wait()
+
     print("\n" + " =" * 50)
     print("Step 3 - Writer")
     print("=" * 50)
@@ -100,7 +113,6 @@ Return ONLY the scraped article.
 SEARCH RESULTS
 
 {state['search_results']}
-
 
 SCRAPED CONTENT
 
@@ -116,23 +128,10 @@ SCRAPED CONTENT
 
     print(state["report"])
 
-    # ---------------- Critic ----------------
-    print("\n" + " =" * 50)
-    print("Step 4 - Critic")
-    print("=" * 50)
-
-    state["feedback"] = critic_chain.invoke(
-        {
-            "report": state["report"],
-        }
-    )
-
-    print(state["feedback"])
-
     return state
 
 
 if __name__ == "__main__":
     topic = input("Enter research topic: ")
+    
     run_research_pipeline(topic)
-

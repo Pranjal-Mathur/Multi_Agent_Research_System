@@ -1,5 +1,5 @@
 from langchain.agents import create_agent
-from langchain_mistralai import ChatMistralAI
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from tools import web_search, scrape_url
@@ -7,9 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-llm = ChatMistralAI(
-    model="mistral-large-latest",
+llm = ChatGroq(
+    model="llama-3.1-8b-instant",
     temperature=0,
+    max_tokens=350,
 )
 
 # ---------------- Search Agent ----------------
@@ -18,21 +19,20 @@ def build_search_agent():
         model=llm,
         tools=[web_search],
         system_prompt="""
-You are a research search agent.
+You are a search agent.
 
-Always use the web_search tool.
+IMPORTANT RULES:
 
-Your job is ONLY to return the raw search results.
+1. You MUST call the web_search tool exactly ONCE.
+2. Never answer from your own knowledge.
+3. After the tool returns, COPY THE TOOL OUTPUT VERBATIM.
+4. Do NOT summarize.
+5. Do NOT remove URLs.
+6. Do NOT reformat.
+7. Do NOT explain anything.
+8. Your final response must be ONLY the tool output.
 
-For every result, preserve exactly:
-
-Title:
-URL:
-Snippet:
-
-DO NOT summarize.
-DO NOT rewrite.
-DO NOT remove URLs.
+If the tool returns five results, output all five exactly as received.
 """,
     )
 
@@ -43,46 +43,50 @@ def build_reader_agent():
         model=llm,
         tools=[scrape_url],
         system_prompt="""
-You are a research reader agent.
+You are a reader agent.
 
-You will receive search results containing Titles, URLs and snippets.
+Rules:
 
-Extract the BEST URL.
-
-Call scrape_url on that URL.
-
-Return ONLY the scraped text.
-
-Do not answer from your own knowledge.
+1. Read the search results.
+2. Pick the single most relevant URL.
+3. Call scrape_url exactly once.
+4. Return ONLY the scraped text.
+5. Never answer from your own knowledge.
+6. Do not summarize.
 """,
     )
 
 
-# ---------------- Writer Chain ----------------
+# ---------------- Writer ----------------
+
 writer_prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
-            "You are an expert research writer. Write clear, structured and insightful reports.",
+            """
+You are an expert report writer.
+
+Write only from the supplied research.
+
+Do not invent facts.
+
+Maximum 150 words.
+""",
         ),
         (
             "human",
-            """Write a detailed research report on the topic below.
-
+            """
 Topic:
 {topic}
 
-Research Gathered:
+Research:
 {research}
 
-Structure the report as:
+Write:
 
-- Introduction
-- Key Findings (minimum 3 well-explained points)
-- Conclusion
-- Sources (list all URLs found in the research)
-
-Be detailed, factual and professional.
+Summary:
+Key Findings:
+Sources:
 """,
         ),
     ]
@@ -90,38 +94,3 @@ Be detailed, factual and professional.
 
 writer_chain = writer_prompt | llm | StrOutputParser()
 
-
-# ---------------- Critic Chain ----------------
-critic_prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            "You are a sharp and constructive research critic. Be honest and specific.",
-        ),
-        (
-            "human",
-            """Review the research report below and evaluate it strictly.
-
-Report:
-{report}
-
-Respond in this exact format:
-
-Score: X/10
-
-Strengths:
-- ...
-- ...
-
-Areas to Improve:
-- ...
-- ...
-
-One line verdict:
-...
-""",
-        ),
-    ]
-)
-
-critic_chain = critic_prompt | llm | StrOutputParser()
